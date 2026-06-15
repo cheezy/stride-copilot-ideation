@@ -155,7 +155,7 @@ The protocol skill enforces:
 - the mandatory round-4 premortem,
 - the mandatory round-5 MVP design (lean-startup profile only),
 - the seven hard-gated sections (Goal, Problem, Outcome, Assumptions, Constraints, Non-goals, Success Metrics),
-- the advisory `requirements-reviewer` agent pass before the write.
+- the advisory `requirements-reviewer` agent pass before the write — its findings are surfaced to the human as a selectable decision via the Copilot CLI selection primitive (each finding one line, severity-tagged, plus an explicit "Address none — write as-is" option) that feeds the at-most-one refinement round; an `approved` verdict with no findings shows no prompt, and the reviewer never blocks the write (see **Reviewer pass** in `skills/stride-ideation/SKILL.md`).
 
 When the protocol skill returns, you will have a single string `DRAFT_DOC` containing the fully composed requirements markdown — every gated section present and substantive. If the protocol skill returns without a draft (user aborted, hard gate not satisfied), stop here and exit cleanly — do NOT write anything to disk and do NOT commit.
 
