@@ -104,6 +104,25 @@ If `INPUT_PATH` is set, **read-only** load its content via the platform's file-r
 
 `--input` and `--continue` are independent: both `PRIOR_DOC` and `INPUT_NOTES` may be non-empty in the same session (a prior committed doc *and* a fresh notes file), one may be set without the other, or neither. The seed lowers the starting cost — it does NOT lower the bar: the hard gates, the round-3 framing checkpoint, the premortem, and the reviewer pass all still run, and gaps or weak sections are still asked in the rounds.
 
+### Step 4d: Detect an unfinished draft and resolve the autosave path
+
+The requirements doc is not written until the hard gate passes (Step 8), so an interruption mid-session would otherwise lose every answer. To make a session recoverable, the skill autosaves the in-progress draft to a **gitignored** scratch file under `.stride/` (see Step 5), and on start it offers to resume any unfinished draft for the **same slug**.
+
+Source the draft helper and look for an existing draft keyed by `SLUG` (resume keys on the slug, not `SESSION_TS`, because a fresh run has a new timestamp). Use `lib/draft.sh` on Unix shells, or its mirror `lib/draft.ps1` (`Sti-DraftFind`) on Windows:
+
+```bash
+. <plugin-root>/lib/draft.sh
+
+EXISTING_DRAFT="$(sti_draft_find .stride "$SLUG" 2>/dev/null || true)"
+```
+
+`sti_draft_find` returns the latest **non-empty** scratch draft matching `<ts>-$SLUG-draft.md` under `.stride/`, or nothing when none exists (an empty or absent scratch yields no offer — a partial/corrupt draft safely falls back to a fresh session). Resolve `DRAFT_PATH` for this session:
+
+- **If `EXISTING_DRAFT` is non-empty**, ask the user via the platform's question UI (NOT Claude Code's `AskUserQuestion`) whether to **resume** that draft or **start fresh** (offer "Resume" as the first option). On resume, set `DRAFT_PATH="$EXISTING_DRAFT"` so the session continues autosaving to — and the protocol skill loads from — that same file. On start-fresh, run `sti_draft_clear "$EXISTING_DRAFT"` to discard the abandoned draft, then set `DRAFT_PATH="$(sti_draft_path .stride "$SESSION_TS" "$SLUG")"`.
+- **If `EXISTING_DRAFT` is empty** (none found), set `DRAFT_PATH="$(sti_draft_path .stride "$SESSION_TS" "$SLUG")"` — a fresh per-session scratch path.
+
+Only same-slug drafts are ever offered; a draft for a different in-flight topic is never surfaced here. The `.stride/` scratch directory is gitignored (see the project `.gitignore`) and the scratch file is **never** `git add`-ed or committed, and **never** holds the Stride API token or any other secret — it carries only the in-progress draft prose.
+
 ### Step 5: Drive the `stride-ideation` protocol skill
 
 Activate the `stride-ideation` skill (the protocol skill ported to `skills/stride-ideation/SKILL.md`) passing the topic, locked slug, session timestamp, target path, the prior document (if any), and the resolved profile. The protocol skill's contract specifies these inputs explicitly:
@@ -115,12 +134,15 @@ session_ts=<SESSION_TS>
 target_path=<TARGET_PATH>
 prior_doc=<PRIOR_DOC>
 input_notes=<INPUT_NOTES>
+draft_path=<DRAFT_PATH>
 profile=<PROFILE>
 ```
 
 When `PRIOR_DOC` is non-empty, the protocol skill starts the session with that content already loaded as context — refining and sharpening rather than re-eliciting every section from scratch. The Q&A loop, the round-3 checkpoint, the hard gates, and the advisory reviewer pass all still run; `--continue` does not lower the bar, only the starting cost.
 
 When `INPUT_NOTES` is non-empty, the protocol skill pre-populates draft sections from that freeform brain-dump wherever the notes clearly map to a gated section, then focuses the rounds on the gaps and weak sections rather than re-eliciting every section from scratch. Seeded content is a *draft starting point*, not a confirmed answer: it never satisfies a hard gate on its own — every gated section the seed pre-fills is still confirmed (or sharpened) with the human in the rounds, and sections the notes do not cover are asked normally. `prior_doc` and `input_notes` are independent and may both be present in one session.
+
+`draft_path=<DRAFT_PATH>` (resolved in Step 4d) is the gitignored scratch file for **intra-session autosave**. The protocol skill persists the in-progress draft — the answered sections plus the round state — to that path via `sti_draft_save` (Unix) / `Sti-DraftSave` (Windows) **after every round**, so an interruption after any round is recoverable rather than losing every answer. If `DRAFT_PATH` already holds content (a resumed draft from Step 4d), the protocol skill loads it as starting context at round 1. The scratch file holds only draft prose: it is gitignored, never `git add`-ed, and never carries the Stride API token or any other secret. Autosave is a recovery convenience, not a gate bypass — the hard gates, framing checkpoint, premortem, and reviewer pass still run in full.
 
 The parsed value of `--profile` from Step 1 is threaded into the protocol skill as `profile=<PROFILE>`. It selects which forcing questions run inside the rounds and which optional sections the document may include. See the **Profiles** subsection of `skills/stride-ideation/SKILL.md` for the per-profile augmentations. `--profile=lean` (the default) leaves the round loop unchanged from upstream v0.3.0; `--profile=product`, `--profile=discovery`, and `--profile=lean-startup` add advisory rubric checks and (for `product` and `lean-startup`) one optional section.
 
@@ -213,9 +235,17 @@ if [ -n "$CONTINUE_PATH" ]; then
 else
   git commit -m "stride-ideation: requirements for $SLUG"
 fi
+
+# The session succeeded — the committed doc supersedes the scratch draft.
+# Delete the gitignored autosave file (sti_draft_clear / Sti-DraftClear) so no
+# stale draft lingers to be offered for resume next time. Idempotent: a no-op
+# if the draft was never written.
+sti_draft_clear "$DRAFT_PATH"
 ```
 
 Commit message format: `stride-ideation: requirements for <slug>` (fresh) or `stride-ideation: refine requirements for <slug>` (continue). Do not include the session timestamp in the message — the filename already carries it.
+
+The `sti_draft_clear "$DRAFT_PATH"` call (or `Sti-DraftClear` on Windows) runs **only after the commit succeeds** — the scratch draft is the recovery artifact, so it survives until the real doc is committed and is then removed so no stale autosave is offered for resume on a future run. The scratch file lives under the gitignored `.stride/` directory and is never part of the commit's file list.
 
 If the working tree had unrelated uncommitted changes before the session, the commit MUST include only the new requirements doc. Use `git add <path>` (not `git add -A` or `git commit -a`) to avoid sweeping unrelated work into this commit. In `--continue` mode the source document MUST NOT appear in the commit's file list (it was not modified, so `git status` will already show it clean — but verify nothing accidental crept in).
 
