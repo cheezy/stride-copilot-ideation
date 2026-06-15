@@ -112,6 +112,7 @@ The parsed value of `--profile` from Step 1 is threaded into the protocol skill 
 The protocol skill enforces:
 - the hard gate against premature implementation,
 - the round-based question loop (≤ 4 questions per round),
+- the display-only round recap printed before every round (see **Round recap** in `skills/stride-ideation/SKILL.md`) — it reports per-section solid/thin/empty status and the round's target sections without changing the gate, the round order, or the question budget,
 - the mandatory round-3 framing checkpoint,
 - the mandatory round-4 premortem,
 - the mandatory round-5 MVP design (lean-startup profile only),
