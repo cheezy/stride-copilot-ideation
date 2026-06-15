@@ -9,17 +9,23 @@ This plugin provides brainstorming and ideation skills for projects that use [St
 The two skills:
 
 ```text
-stride-ideation-ideate [<topic>] [--continue <path>] [--profile <name>]
+stride-ideation-ideate [<topic>] [--continue <path>] [--input <path>] [--profile <name>]
   Interactive ideation session. Drives a Q&A loop with you to produce a
   timestamped requirements markdown doc. Stop here if you only want a spec.
+  --continue refines a prior committed requirements doc; --input seeds draft
+  sections from a freeform brain-dump file (read-only). When --profile is
+  omitted, the session recommends one before the rounds. See "Session
+  experience" below.
 
-stride-ideation-stridify <path-to-requirements.md> [--goal <name|index>]
+stride-ideation-stridify <path-to-requirements.md> [--goal <name|index>] [--yes]
   End-to-end pipeline: validates the requirements doc, preflights auth,
   dispatches the decomposer agent, stamps audit metadata, writes and
-  commits a sibling Stride batch JSON, then POSTs it to /api/tasks/batch
-  on your Stride instance and renders the created G/W identifiers.
+  commits a sibling Stride batch JSON, then — after showing you the decomposed
+  goal/task tree and getting your approval — POSTs it to /api/tasks/batch on
+  your Stride instance and renders the created G/W identifiers.
   --goal scopes the dispatch to one surface from the doc's
   ## Decomposition seams section (see the upstream "Resilience model" below).
+  --yes / --auto-approve bypasses the approval gate for scripted callers.
 ```
 
 The first skill is hard-gated on seven required sections (Goal, Problem, Outcome, Assumptions, Constraints, Non-goals, Success metrics) plus shape requirements on Assumptions (ranked, riskiest marked, premortem-derived) and Success metrics (both leading and lagging indicators). The second skill is gated on a passing structural validation of the decomposer's output before it commits or POSTs anything.
@@ -87,6 +93,23 @@ When the requirements doc has many surfaces (`## Decomposition seams` with > 3 i
 
 Each `--goal` run produces a sibling batch JSON named `<source-slug>-<goal-slug>-stride-batch.json`.
 
+## Session experience (v0.2.0+)
+
+`stride-ideation-ideate` is a guided, recoverable, human-in-control session. These affordances are additive — a flag-free or `--profile=lean` run still produces the same committed requirements doc. All interaction uses the Copilot CLI platform's question/selection UI.
+
+| Feature | What it does |
+|---|---|
+| **Round recap** | Before every round, a display-only recap shows each of the seven gated sections as `solid` / `thin` / `empty` plus the round's target sections. Never a question; never changes the gate, round order, or question budget. |
+| **"I'm not sure — propose candidates"** | Every gated-section and forcing question carries this option. Picking it makes the skill propose 2–4 concrete, topic-tailored candidates with one-line rationales; you pick, edit, or ask for more. A proposed candidate never satisfies the gate until you confirm it. |
+| **Profile recommendation** | When `--profile` is omitted, a single recommendation question runs before the rounds (recommended-first, lean default). Explicit `--profile` skips it. |
+| **`--input <file>` brain-dump seed** | Reads a freeform notes file **read-only** and pre-populates draft sections, then focuses the rounds on the gaps. Distinct from `--continue` and composable with it. The input file is never modified, moved, or committed. |
+| **Draft autosave & resume** | The in-progress draft is autosaved after every round to a **gitignored** scratch file under `.stride/`. On start, an unfinished draft for the same slug is detected and you're offered resume-or-fresh; the scratch file is deleted after a successful commit. Never holds the Stride API token. |
+| **Reviewer decision** | When the advisory `requirements-reviewer` reports findings, they're surfaced as a selectable decision (severity-tagged) with an explicit **"Address none — write as-is"** choice. You choose what feeds the single refinement round. At most one refinement round; the reviewer never blocks the write. |
+
+## Preview-and-approval gate on `stride-ideation-stridify` (v0.2.0+)
+
+Before POSTing the generated batch to your Stride instance, the skill renders the decomposed goal/task tree (each goal title, its task count and titles, and the cross-goal claim order from `decomposition_notes`) and requires your explicit approval. The batch JSON is written and committed to disk *before* the gate, so on decline the skill stops cleanly (exit 0) with the audited artifact intact and no POST. Pass `--yes` / `--auto-approve` (explicit only, never inferred) to bypass the gate for scripted callers. The preview reads only the on-disk JSON and never prints the API token.
+
 ## How this plugin relates to `stride-copilot`
 
 [`stride-copilot`](https://github.com/cheezy/stride-copilot) and `stride-copilot-ideation` are sibling plugins with different scopes:
@@ -105,14 +128,14 @@ Then: activate `stride-ideation-ideate` to scope the work, activate `stride-idea
 
 ## How this plugin relates to upstream `stride-ideation`
 
-This plugin is a faithful port of [`cheezy/stride-ideation`](https://github.com/cheezy/stride-ideation) v0.7.0 to GitHub Copilot CLI. The protocol — round-based question batching, hard-gated sections, advisory reviewer pass, decomposer dispatch with bounded retry, retry-exhaustion fallback, source_spec stamping, validator-before-commit, never-retry-POST — is preserved verbatim. The differences are mechanical adaptations:
+This plugin is a faithful port of [`cheezy/stride-ideation`](https://github.com/cheezy/stride-ideation) to GitHub Copilot CLI — v0.1.0 ported upstream v0.7.0, and **v0.2.0 ports the upstream v0.8.0 feature set** (per-round recap, "I'm not sure" uncertainty path, profile recommendation, `--input` seed, draft autosave/resume, reviewer-findings decision, and the `stridify` preview-and-approval gate with `--yes`). The protocol — round-based question batching, hard-gated sections, advisory reviewer pass, decomposer dispatch with bounded retry, retry-exhaustion fallback, source_spec stamping, validator-before-commit, never-retry-POST — is preserved verbatim. The differences are mechanical adaptations:
 
 | Upstream (Claude Code) | This plugin (Copilot CLI) |
 |---|---|
 | Two slash commands (`/stride-ideation:ideate`, `/stride-ideation:stridify`) | Two named skills (`stride-ideation-ideate`, `stride-ideation-stridify`) — Copilot CLI has no slash-command mechanism |
 | `commands/*.md` directory | `skills/<name>/SKILL.md` directories |
 | `agents/*.md` agent files | `agents/*.agent.md` agent files (Copilot extension) |
-| `AskUserQuestion` tool name | "platform's question UI" — Copilot's question mechanism |
+| `AskUserQuestion` tool name | "platform's question UI" / selection primitive — Copilot's question mechanism (recap, uncertainty path, profile recommendation, reviewer decision, and stridify gate all use it) |
 | `Bash`, `Read`, `Write`, `Skill`, `Agent` tool names | Inferred via skill body (Copilot auto-resolves) |
 | `lib/filename.sh` only | `lib/filename.sh` + `lib/filename.ps1` mirror for Windows users |
 | `lib/test-*.sh` only | `lib/test-*.sh` + `lib/test-*.ps1` mirrors for Windows users |
