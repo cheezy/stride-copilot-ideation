@@ -4,6 +4,12 @@ All notable changes to the `stride-copilot-ideation` plugin are documented here.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Security
+
+- **Audit: the install path does not overwrite a project-root context file (no fix needed).** Reviewed the Copilot install path for the `AGENTS.md`-overwrite class of bug found in the OpenCode/Codex ideation installers. This plugin has no `install.sh`/`install.ps1`; it installs exclusively via `copilot plugin install https://github.com/cheezy/stride-copilot-ideation`, which places the plugin inside Copilot's managed plugin directory. `plugin.json` declares only metadata plus `agents`/`skills` pointers — no install hook and no directive that writes any file to the user's project root — and the plugin ships no `AGENTS.md`/context file at all. The only project-root file the README references is `.stride_auth.md`, which the user creates manually (and is told to `.gitignore`); the installer never writes it. Conclusion: safe — no project-root context file is ever clobbered, so the managed-block guard applied to the OpenCode/Codex installers is unnecessary here.
+
 ## [0.2.0] - 2026-06-15
 
 Ports the upstream [`cheezy/stride-ideation`](https://github.com/cheezy/stride-ideation) **v0.8.0** feature set to GitHub Copilot CLI — six `stride-ideation-ideate` session-experience features plus a `stride-ideation-stridify` preview-and-approval gate. Every interaction is adapted to the Copilot CLI platform's question/selection primitive (never Claude Code's `AskUserQuestion`), and every new shell helper/suite ships with its PowerShell mirror for Windows parity. Additive — `--profile=lean` (and flag-free) sessions remain compatible with v0.1.0 on the happy path.
